@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
+/**
+ * @title PollContract
+ @author Salami Khalil
+ * @dev A smart contract for creating and managing polls.
+ */
 contract PollContract {
     uint256 public POLL_UUID;
 
     struct Poll {
         bool ended;
-        bool public__Poll;
+        bool public__access;
         uint256 Id;
         address[] whiteList;
         address Creator;
@@ -14,42 +19,48 @@ contract PollContract {
         string[] options;
         uint256[] values;
     }
-    mapping(address => uint256[]) public UserPolls;
-    mapping(uint256 => Poll) public Poll_List;
 
-    mapping(uint256 => mapping(address => bool)) public Poll_Participant;
-    mapping(uint256 => mapping(address => bool)) public Poll_Allowance;
+    mapping(address => uint256[]) private UserPolls;
+    mapping(uint256 => Poll) private Poll_List;
+    mapping(uint256 => mapping(address => bool)) private Poll_Participant;
+    mapping(uint256 => mapping(address => bool)) private Poll_Allowance;
 
-    error NotAllowed(string description);
-    error AlreadyVoted();
+    error Not_Whitelisted();
+    error Already_Voted();
     error Not_Owner();
-    error poll_Ended();
+    error Poll_Closed();
 
-    event Poll_Created(address indexed creator, uint256 Poll_ID);
-    event Vote_Poll(address indexed creator, uint256 Poll_ID);
-    event Poll_Deleted(uint256 indexed Poll_ID);
-    event Poll_Ended(uint256 indexed Poll_ID);
+    event PollCreated(address indexed creator, uint256 Poll_ID);
+    event PollVoted(address indexed User, uint256 Poll_ID);
+    event PollDeleted(uint256 indexed Poll_ID);
+    event PollEnded(uint256 indexed Poll_ID);
 
-    modifier onlyOwner(uint256 Id) {
-        if (msg.sender != Poll_List[Id].Creator) {
-            revert Not_Owner();
-        }
+    /**
+     * @dev Modifier to check if the caller is the owner of a poll.
+     * @param _Id The ID of the poll.
+     */
+    modifier onlyOwner(uint256 _Id) {
+        require(msg.sender == Poll_List[_Id].Creator, "Not the poll owner");
         _;
     }
 
-    ///////////////////////////////////////////////////////////////
-    ///////////////////////// FUNCTIONS //////////////////////////
-    /////////////////////////////////////////////////////////////
+    /**
+     * @dev Creates a new poll.
+     * @param _public__access Whether the poll is public or private.
+     * @param _whiteList List of addresses allowed to participate (for private polls).
+     * @param _question The poll question.
+     * @param _options List of poll options.
+     */
     function CreatePoll(
-        bool _public__Poll,
+        bool _public__access,
         address[] memory _whiteList,
         string memory _question,
         string[] memory _options
-    ) public {
+    ) external {
         Poll memory polldata = Poll({
             Id: POLL_UUID,
             ended: false,
-            public__Poll: _public__Poll,
+            public__access: _public__access,
             whiteList: _whiteList,
             Creator: msg.sender,
             question: _question,
@@ -57,71 +68,99 @@ contract PollContract {
             values: new uint256[](_options.length)
         });
 
-        if (_public__Poll == false) {
+        if (!_public__access) {
             for (uint256 i = 0; i < _whiteList.length; ++i) {
                 Poll_Allowance[POLL_UUID][_whiteList[i]] = true;
             }
         }
+
         Poll_List[POLL_UUID] = polldata;
         UserPolls[msg.sender].push(POLL_UUID);
         POLL_UUID += 1;
-        emit Poll_Created(msg.sender, POLL_UUID);
+        emit PollCreated(msg.sender, POLL_UUID);
     }
 
-    function usePoll(address owner, uint256 Id, uint256 optionIndex) external {
-        if (Poll_List[Id].ended == true) {
-            revert poll_Ended();
+    /**
+     * @dev Records a vote in a poll.
+     * @param _Id The ID of the poll.
+     * @param _optionIndex The index of the chosen option.
+     */
+    function usePoll(uint256 _Id, uint256 _optionIndex) external {
+        if (Poll_List[_Id].ended) {
+            revert Poll_Closed();
         }
         require(
-            msg.sender != Poll_List[Id].Creator,
+            msg.sender != Poll_List[_Id].Creator,
             "Creator cannot participate"
         );
-        if (Poll_Participant[Id][msg.sender] == true) {
-            revert AlreadyVoted();
+        if (Poll_Participant[_Id][msg.sender]) {
+            revert Already_Voted();
         }
 
         if (
-            Poll_List[Id].public__Poll == false &&
-            Poll_Allowance[Id][msg.sender] == false
+            !Poll_List[_Id].public__access && !Poll_Allowance[_Id][msg.sender]
         ) {
-            revert NotAllowed("Your address is not on the whitelist");
+            revert Not_Whitelisted();
         }
 
-        Poll_Participant[Id][msg.sender] = true;
-        Poll_List[Id].values[optionIndex] += 1;
-        emit Vote_Poll(owner, Id);
-
-        // address[] memory whiteList = Poll_List[poll_ID].whiteList;
-
-        // for (uint256 i = 0; i < whiteList.length; ++i) {
-        //     if (whiteList[i] == msg.sender) {
-        //         uint256 Poll_Index = UserPolls[owner][poll_ID].Id;
-        //         Poll_Participant[Poll_Index][msg.sender] = true;
-        //         UserPolls[owner][poll_ID].values[optionIndex] += 1;
-        //         emit Vote_Poll(owner, poll_ID);
-        //     } else {
-        //         revert NotAllowed("You address is not on the whiteList");
-        //     }
-        // }
+        Poll_Participant[_Id][msg.sender] = true;
+        Poll_List[_Id].values[_optionIndex] += 1;
+        emit PollVoted(msg.sender, _Id);
     }
 
-    function deletePoll(uint256 _Id) public onlyOwner(_Id) {
-        // Poll memory temp_poll = poll_data[poll_data.length - 1];
-        // Remove the last element
+    /**
+     * @dev Deletes a poll.
+     * @param _Id The ID of the poll to be deleted.
+     */
+    function deletePoll(uint256 _Id) external onlyOwner(_Id) {
         delete Poll_List[_Id];
-        emit Poll_Deleted(_Id);
+        emit PollDeleted(_Id);
     }
 
-    function endPoll(uint256 _Id) public onlyOwner(_Id) {
-        require(Poll_List[_Id].ended == false, "Poll alredy ended");
+    /**
+     * @dev Ends a poll.
+     * @param _Id The ID of the poll to be ended.
+     */
+    function endPoll(uint256 _Id) external onlyOwner(_Id) {
+        require(!Poll_List[_Id].ended, "Poll already ended");
         Poll_List[_Id].ended = true;
-        emit Poll_Ended(_Id);
+        emit PollEnded(_Id);
     }
 
-    ///////////////////////////////////////////////////////////////
-    ///////////////////////// GETTER FUNCTIONS //////////////////////////
-    /////////////////////////////////////////////////////////////
-    // function getMyPolls() external view returns (uint256[] memory) {
-    //     return UserPolls[msg.sender];
-    // }
+    /**
+     * @dev Checks if an address can participate in a specific poll.
+     * @param Poll_Id The ID of the poll.
+     * @return Whether the address can participate.
+     */
+    function canParticipate(uint256 Poll_Id) external view returns (bool) {
+        return Poll_Participant[Poll_Id][msg.sender];
+    }
+
+    /**
+     * @dev Checks if an address has already participated in a specific poll.
+     * @param Poll_Id The ID of the poll.
+     * @return Whether the address has already participated.
+     */
+    function alreadyParticipated(uint256 Poll_Id) external view returns (bool) {
+        return Poll_Allowance[Poll_Id][msg.sender];
+    }
+
+    /**
+     * @dev Gets the IDs of polls created by the caller.
+     * @return An array of poll IDs.
+     */
+    function getUserPolls() external view returns (uint256[] memory) {
+        return UserPolls[msg.sender];
+    }
+
+    /**
+     * @dev Gets the details of a specific poll.
+     * @param Poll_Id The ID of the poll.
+     * @return Poll details.
+     */
+    function getSinglePoll(
+        uint256 Poll_Id
+    ) external view returns (Poll memory) {
+        return Poll_List[Poll_Id];
+    }
 }
