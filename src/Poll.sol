@@ -13,7 +13,6 @@ contract PollContract {
         bool ended;
         bool public__access;
         uint256 Id;
-        address[] whiteList;
         address Creator;
         string question;
         string[] options;
@@ -45,6 +44,15 @@ contract PollContract {
     }
 
     /**
+     * @dev Modifier to check if the Id is a valid ID.
+     * @param _Id The ID of the poll.
+     */
+    modifier valid_ID(uint256 _Id) {
+        // require(Poll_List[_Id].Id != 0, "Invalid ID");
+        _;
+    }
+
+    /**
      * @dev Creates a new poll.
      * @param _public__access Whether the poll is public or private.
      * @param _whiteList List of addresses allowed to participate (for private polls).
@@ -57,11 +65,11 @@ contract PollContract {
         string memory _question,
         string[] memory _options
     ) external {
+        POLL_UUID += 1;
         Poll memory polldata = Poll({
             Id: POLL_UUID,
             ended: false,
             public__access: _public__access,
-            whiteList: _whiteList,
             Creator: msg.sender,
             question: _question,
             options: _options,
@@ -76,7 +84,7 @@ contract PollContract {
 
         Poll_List[POLL_UUID] = polldata;
         UserPolls[msg.sender].push(POLL_UUID);
-        POLL_UUID += 1;
+
         emit PollCreated(msg.sender, POLL_UUID);
     }
 
@@ -85,7 +93,7 @@ contract PollContract {
      * @param _Id The ID of the poll.
      * @param _optionIndex The index of the chosen option.
      */
-    function usePoll(uint256 _Id, uint256 _optionIndex) external {
+    function usePoll(uint256 _Id, uint256 _optionIndex) external valid_ID(_Id) {
         if (Poll_List[_Id].ended) {
             revert Poll_Closed();
         }
@@ -112,7 +120,7 @@ contract PollContract {
      * @dev Deletes a poll.
      * @param _Id The ID of the poll to be deleted.
      */
-    function deletePoll(uint256 _Id) external onlyOwner(_Id) {
+    function deletePoll(uint256 _Id) external valid_ID(_Id) onlyOwner(_Id) {
         delete Poll_List[_Id];
         emit PollDeleted(_Id);
     }
@@ -121,7 +129,7 @@ contract PollContract {
      * @dev Ends a poll.
      * @param _Id The ID of the poll to be ended.
      */
-    function endPoll(uint256 _Id) external onlyOwner(_Id) {
+    function endPoll(uint256 _Id) external valid_ID(_Id) onlyOwner(_Id) {
         require(!Poll_List[_Id].ended, "Poll already ended");
         Poll_List[_Id].ended = true;
         emit PollEnded(_Id);
@@ -132,7 +140,9 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return Whether the address can participate.
      */
-    function canParticipate(uint256 Poll_Id) external view returns (bool) {
+    function canParticipate(
+        uint256 Poll_Id
+    ) external view valid_ID(Poll_Id) returns (bool) {
         return Poll_Participant[Poll_Id][msg.sender];
     }
 
@@ -141,7 +151,9 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return Whether the address has already participated.
      */
-    function alreadyParticipated(uint256 Poll_Id) external view returns (bool) {
+    function alreadyParticipated(
+        uint256 Poll_Id
+    ) external view valid_ID(Poll_Id) returns (bool) {
         return Poll_Allowance[Poll_Id][msg.sender];
     }
 
@@ -160,7 +172,7 @@ contract PollContract {
      */
     function getSinglePoll(
         uint256 Poll_Id
-    ) external view returns (Poll memory) {
+    ) external view valid_ID(Poll_Id) returns (Poll memory) {
         return Poll_List[Poll_Id];
     }
 }
