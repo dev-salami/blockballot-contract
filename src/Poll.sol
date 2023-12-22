@@ -3,42 +3,42 @@ pragma solidity ^0.8.22;
 
 /**
  * @title PollContract
- @author Salami Khalil
+ *  @author Salami Khalil
  * @dev A smart contract for creating and managing polls.
  */
 contract PollContract {
-    uint256 public POLL_UUID;
+    // uint256 public POLL_UUID;
 
     struct Poll {
         bool ended;
         bool public__access;
-        uint256 Id;
         address Creator;
         string question;
         string[] options;
         uint256[] values;
+        string poll_UUID;
     }
 
-    mapping(address => uint256[]) private UserPolls;
-    mapping(uint256 => Poll) private Poll_List;
-    mapping(uint256 => mapping(address => bool)) private Poll_Participant;
-    mapping(uint256 => mapping(address => bool)) private Poll_Allowance;
+    mapping(address => string[]) private UserPolls;
+    mapping(string => Poll) public Poll_List;
+    mapping(string => mapping(address => bool)) private s_HasVoted; //Poll_Participant;
+    mapping(string => mapping(address => bool)) private s_IsWhitelisted; // Poll_allowance
 
     error Not_Whitelisted();
     error Already_Voted();
     error Not_Owner();
     error Poll_Closed();
 
-    event PollCreated(address indexed creator, uint256 Poll_ID);
-    event PollVoted(address indexed User, uint256 Poll_ID);
-    event PollDeleted(uint256 indexed Poll_ID);
-    event PollEnded(uint256 indexed Poll_ID);
+    event PollCreated(address indexed creator, string Poll_ID);
+    event PollVoted(address indexed User, string Poll_ID);
+    event PollDeleted(string indexed Poll_ID);
+    event PollEnded(string indexed Poll_ID);
 
     /**
      * @dev Modifier to check if the caller is the owner of a poll.
      * @param _Id The ID of the poll.
      */
-    modifier onlyOwner(uint256 _Id) {
+    modifier onlyOwner(string memory _Id) {
         require(msg.sender == Poll_List[_Id].Creator, "Not the poll owner");
         _;
     }
@@ -47,8 +47,8 @@ contract PollContract {
      * @dev Modifier to check if the Id is a valid ID.
      * @param _Id The ID of the poll.
      */
-    modifier valid_ID(uint256 _Id) {
-        // require(Poll_List[_Id].Id != 0, "Invalid ID");
+    modifier valid_ID(string memory _Id) {
+        require(Poll_List[_Id].Creator != address(0), "Invalid ID");
         _;
     }
 
@@ -60,32 +60,46 @@ contract PollContract {
      * @param _options List of poll options.
      */
     function CreatePoll(
+        string memory UUID,
         bool _public__access,
         address[] memory _whiteList,
         string memory _question,
         string[] memory _options
     ) external {
-        POLL_UUID += 1;
         Poll memory polldata = Poll({
-            Id: POLL_UUID,
             ended: false,
             public__access: _public__access,
             Creator: msg.sender,
             question: _question,
             options: _options,
-            values: new uint256[](_options.length)
+            values: new uint256[](_options.length),
+            poll_UUID: UUID
         });
 
         if (!_public__access) {
             for (uint256 i = 0; i < _whiteList.length; ++i) {
-                Poll_Allowance[POLL_UUID][_whiteList[i]] = true;
+                s_IsWhitelisted[UUID][_whiteList[i]] = true;
             }
         }
 
-        Poll_List[POLL_UUID] = polldata;
-        UserPolls[msg.sender].push(POLL_UUID);
+        Poll_List[UUID] = polldata;
+        UserPolls[msg.sender].push(UUID);
 
-        emit PollCreated(msg.sender, POLL_UUID);
+        emit PollCreated(msg.sender, UUID);
+    }
+
+    function addAddress_to_whiteList(string memory _Id, address[] memory addresses)
+        external
+        onlyOwner(_Id)
+        valid_ID(_Id)
+    {
+        if (Poll_List[_Id].public__access) {
+            revert("Poll is publicly acessible");
+        } else {
+            for (uint256 i = 0; i < addresses.length; ++i) {
+                s_IsWhitelisted[_Id][addresses[i]] = true;
+            }
+        }
     }
 
     /**
@@ -93,25 +107,20 @@ contract PollContract {
      * @param _Id The ID of the poll.
      * @param _optionIndex The index of the chosen option.
      */
-    function usePoll(uint256 _Id, uint256 _optionIndex) external valid_ID(_Id) {
+    function usePoll(string calldata _Id, uint256 _optionIndex) external valid_ID(_Id) {
         if (Poll_List[_Id].ended) {
             revert Poll_Closed();
         }
-        require(
-            msg.sender != Poll_List[_Id].Creator,
-            "Creator cannot participate"
-        );
-        if (Poll_Participant[_Id][msg.sender]) {
+        require(msg.sender != Poll_List[_Id].Creator, "Creator cannot participate");
+        if (s_HasVoted[_Id][msg.sender]) {
             revert Already_Voted();
         }
 
-        if (
-            !Poll_List[_Id].public__access && !Poll_Allowance[_Id][msg.sender]
-        ) {
+        if (!Poll_List[_Id].public__access && !s_IsWhitelisted[_Id][msg.sender]) {
             revert Not_Whitelisted();
         }
 
-        Poll_Participant[_Id][msg.sender] = true;
+        s_HasVoted[_Id][msg.sender] = true;
         Poll_List[_Id].values[_optionIndex] += 1;
         emit PollVoted(msg.sender, _Id);
     }
@@ -120,16 +129,18 @@ contract PollContract {
      * @dev Deletes a poll.
      * @param _Id The ID of the poll to be deleted.
      */
-    function deletePoll(uint256 _Id) external valid_ID(_Id) onlyOwner(_Id) {
+    function deletePoll(string memory _Id, uint256 _index) external valid_ID(_Id) onlyOwner(_Id) {
         delete Poll_List[_Id];
+        UserPolls[msg.sender][_index] = UserPolls[msg.sender][UserPolls[msg.sender].length - 1];
+        UserPolls[msg.sender].pop();
         emit PollDeleted(_Id);
     }
 
     /**
-     * @dev Ends a poll.
+     * //  * @dev Ends a poll.
      * @param _Id The ID of the poll to be ended.
      */
-    function endPoll(uint256 _Id) external valid_ID(_Id) onlyOwner(_Id) {
+    function endPoll(string calldata _Id) external valid_ID(_Id) onlyOwner(_Id) {
         require(!Poll_List[_Id].ended, "Poll already ended");
         Poll_List[_Id].ended = true;
         emit PollEnded(_Id);
@@ -138,12 +149,16 @@ contract PollContract {
     /**
      * @dev Checks if an address can participate in a specific poll.
      * @param Poll_Id The ID of the poll.
-     * @return Whether the address can participate.
+     * @return It returns false if user has voted or if user is not whitelisted when poll public access is false else it returns true
      */
-    function canParticipate(
-        uint256 Poll_Id
-    ) external view valid_ID(Poll_Id) returns (bool) {
-        return Poll_Participant[Poll_Id][msg.sender];
+    function canParticipate(string calldata Poll_Id) external view valid_ID(Poll_Id) returns (bool) {
+        // Checks if an address can participate in a specific poll.
+        //It returns false if user has voted or  if user is not whitelisted when poll public access is false
+        if (
+            s_HasVoted[Poll_Id][msg.sender]
+                || (!s_IsWhitelisted[Poll_Id][msg.sender] && !Poll_List[Poll_Id].public__access)
+        ) return false;
+        else return true;
     }
 
     /**
@@ -151,17 +166,15 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return Whether the address has already participated.
      */
-    function alreadyParticipated(
-        uint256 Poll_Id
-    ) external view valid_ID(Poll_Id) returns (bool) {
-        return Poll_Allowance[Poll_Id][msg.sender];
+    function alreadyParticipated(string calldata Poll_Id) external view valid_ID(Poll_Id) returns (bool) {
+        return s_HasVoted[Poll_Id][msg.sender];
     }
 
     /**
      * @dev Gets the IDs of polls created by the caller.
      * @return An array of poll IDs.
      */
-    function getUserPolls() external view returns (uint256[] memory) {
+    function getUserPolls() external view returns (string[] memory) {
         return UserPolls[msg.sender];
     }
 
@@ -170,9 +183,7 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return Poll details.
      */
-    function getSinglePoll(
-        uint256 Poll_Id
-    ) external view valid_ID(Poll_Id) returns (Poll memory) {
+    function getSinglePoll(string calldata Poll_Id) external view valid_ID(Poll_Id) returns (Poll memory) {
         return Poll_List[Poll_Id];
     }
 }
