@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.22;
+pragma solidity 0.8.22;
 
 /**
  * @title PollContract
@@ -59,7 +59,7 @@ contract PollContract {
      * @param _question The poll question.
      * @param _options List of poll options.
      */
-    function CreatePoll(
+    function createPoll(
         string memory UUID,
         bool _public__access,
         address[] memory _whiteList,
@@ -88,11 +88,10 @@ contract PollContract {
         emit PollCreated(msg.sender, UUID);
     }
 
-    function addAddress_to_whiteList(string memory _Id, address[] memory addresses)
-        external
-        onlyOwner(_Id)
-        valid_ID(_Id)
-    {
+    function addAddressToWhiteList(
+        string memory _Id,
+        address[] memory addresses
+    ) external onlyOwner(_Id) valid_ID(_Id) {
         if (Poll_List[_Id].public__access) {
             revert("Poll is publicly acessible");
         } else {
@@ -107,16 +106,24 @@ contract PollContract {
      * @param _Id The ID of the poll.
      * @param _optionIndex The index of the chosen option.
      */
-    function usePoll(string calldata _Id, uint256 _optionIndex) external valid_ID(_Id) {
+    function usePoll(
+        string calldata _Id,
+        uint256 _optionIndex
+    ) external valid_ID(_Id) {
         if (Poll_List[_Id].ended) {
             revert Poll_Closed();
         }
-        require(msg.sender != Poll_List[_Id].Creator, "Creator cannot participate");
+        require(
+            msg.sender != Poll_List[_Id].Creator,
+            "Creator cannot participate"
+        );
         if (s_HasVoted[_Id][msg.sender]) {
             revert Already_Voted();
         }
 
-        if (!Poll_List[_Id].public__access && !s_IsWhitelisted[_Id][msg.sender]) {
+        if (
+            !Poll_List[_Id].public__access && !s_IsWhitelisted[_Id][msg.sender]
+        ) {
             revert Not_Whitelisted();
         }
 
@@ -129,9 +136,14 @@ contract PollContract {
      * @dev Deletes a poll.
      * @param _Id The ID of the poll to be deleted.
      */
-    function deletePoll(string memory _Id, uint256 _index) external valid_ID(_Id) onlyOwner(_Id) {
+    function deletePoll(
+        string memory _Id,
+        uint256 _index
+    ) external valid_ID(_Id) onlyOwner(_Id) {
         delete Poll_List[_Id];
-        UserPolls[msg.sender][_index] = UserPolls[msg.sender][UserPolls[msg.sender].length - 1];
+        UserPolls[msg.sender][_index] = UserPolls[msg.sender][
+            UserPolls[msg.sender].length - 1
+        ];
         UserPolls[msg.sender].pop();
         emit PollDeleted(_Id);
     }
@@ -140,7 +152,9 @@ contract PollContract {
      * //  * @dev Ends a poll.
      * @param _Id The ID of the poll to be ended.
      */
-    function endPoll(string calldata _Id) external valid_ID(_Id) onlyOwner(_Id) {
+    function endPoll(
+        string calldata _Id
+    ) external valid_ID(_Id) onlyOwner(_Id) {
         require(!Poll_List[_Id].ended, "Poll already ended");
         Poll_List[_Id].ended = true;
         emit PollEnded(_Id);
@@ -151,12 +165,15 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return It returns false if user has voted or if user is not whitelisted when poll public access is false else it returns true
      */
-    function canParticipate(string calldata Poll_Id) external view valid_ID(Poll_Id) returns (bool) {
+    function canParticipate(
+        string calldata Poll_Id
+    ) external view valid_ID(Poll_Id) returns (bool) {
         // Checks if an address can participate in a specific poll.
         //It returns false if user has voted or  if user is not whitelisted when poll public access is false
         if (
-            s_HasVoted[Poll_Id][msg.sender]
-                || (!s_IsWhitelisted[Poll_Id][msg.sender] && !Poll_List[Poll_Id].public__access)
+            s_HasVoted[Poll_Id][msg.sender] ||
+            (!s_IsWhitelisted[Poll_Id][msg.sender] &&
+                !Poll_List[Poll_Id].public__access)
         ) return false;
         else return true;
     }
@@ -166,7 +183,9 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return Whether the address has already participated.
      */
-    function alreadyParticipated(string calldata Poll_Id) external view valid_ID(Poll_Id) returns (bool) {
+    function alreadyParticipated(
+        string calldata Poll_Id
+    ) external view valid_ID(Poll_Id) returns (bool) {
         return s_HasVoted[Poll_Id][msg.sender];
     }
 
@@ -183,7 +202,9 @@ contract PollContract {
      * @param Poll_Id The ID of the poll.
      * @return Poll details.
      */
-    function getSinglePoll(string calldata Poll_Id) external view valid_ID(Poll_Id) returns (Poll memory) {
+    function getSinglePoll(
+        string calldata Poll_Id
+    ) external view valid_ID(Poll_Id) returns (Poll memory) {
         return Poll_List[Poll_Id];
     }
 }
